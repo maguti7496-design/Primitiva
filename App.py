@@ -2,39 +2,38 @@ import streamlit as st
 import pandas as pd
 from collections import Counter
 import random
+import plotly.express as px
 from datetime import datetime
+import itertools
 
-st.set_page_config(page_title="Primitiva Analyzer", layout="centered")
-st.title("🎰 Analizador Estadístico La Primitiva")
-st.markdown("**Análisis automático de +15 años** • Sugerencias con valor estadístico")
+st.set_page_config(page_title="Primitiva Elite", layout="wide")
+st.title("🎰 Primitiva Elite - Analizador Avanzado")
+st.markdown("**La app más completa para generar las 2 mejores combinaciones estadísticas** • Datos actualizados")
 
-@st.cache_data(ttl=3600)  # Cachea 1 hora
+@st.cache_data(ttl=3600)
 def load_data():
-    with st.spinner("📥 Cargando histórico completo..."):
+    with st.spinner("📥 Cargando +4000 sorteos..."):
         try:
             url1 = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTov1BuA0nkVGTS48arpPFkc9cG7B40Xi3BfY6iqcWTrMwCBg5b50-WwvnvaR6mxvFHbDBtYFKg5IsJ/pub?gid=0&single=true&output=csv"
             url2 = "https://docs.google.com/spreadsheets/d/e/2PACX-1vTov1BuA0nkVGTS48arpPFkc9cG7B40Xi3BfY6iqcWTrMwCBg5b50-WwvnvaR6mxvFHbDBtYFKg5IsJ/pub?gid=1&single=true&output=csv"
-            df1 = pd.read_csv(url1)
-            df2 = pd.read_csv(url2)
-            df = pd.concat([df1, df2], ignore_index=True)
+            df = pd.concat([pd.read_csv(url1), pd.read_csv(url2)], ignore_index=True)
             st.success(f"✅ {len(df):,} sorteos cargados")
             return df
         except:
-            st.error("Error al cargar datos. Inténtalo más tarde.")
+            st.error("Error al cargar datos. Revisa tu conexión.")
             return None
 
 df = load_data()
 
 if df is not None:
-    # Filtros
     col1, col2 = st.columns(2)
     with col1:
-        years = st.slider("Años a analizar", 5, 25, 15)
+        years = st.slider("Años a analizar", 8, 25, 15)
     with col2:
-        n_combos = st.slider("Combinaciones a generar", 5, 20, 10)
+        strategy = st.selectbox("Estrategia", ["Balanced Elite (Recomendada)", "Mixed Smart"])
 
     # Preprocesado
-    date_col = next((col for col in df.columns if 'fecha' in str(col).lower() or 'date' in str(col).lower()), None)
+    date_col = next((col for col in df.columns if 'fecha' in str(col).lower()), None)
     num_cols = [col for col in df.columns if any(str(i) in str(col).lower() for i in range(1,7))]
 
     if date_col:
@@ -42,42 +41,66 @@ if df is not None:
         cutoff = datetime.now() - pd.Timedelta(days=365 * years)
         recent = df[df[date_col] >= cutoff].copy()
     else:
-        recent = df.tail(int(len(df) * 0.6))
+        recent = df.tail(1800)
 
-    # Análisis
     all_nums = []
     for col in num_cols[:6]:
-        nums = pd.to_numeric(recent[col], errors='coerce').dropna().astype(int)
-        all_nums.extend(nums.tolist())
+        all_nums.extend(pd.to_numeric(recent[col], errors='coerce').dropna().astype(int))
 
     freq = Counter(all_nums)
     total = len(recent)
 
-    st.subheader(f"🔥 Estadísticas últimos {years} años ({total} sorteos)")
+    # === ANÁLISIS DE PARES ===
+    def get_common_pairs(data, top=15):
+        pairs = []
+        for _, row in data.iterrows():
+            nums = sorted([pd.to_numeric(row[col], errors='coerce') for col in num_cols[:6]])
+            nums = [int(x) for x in nums if not pd.isna(x)]
+            pairs.extend(itertools.combinations(nums, 2))
+        pair_freq = Counter(pairs)
+        return pair_freq.most_common(top)
 
-    col_hot, col_cold = st.columns(2)
-    with col_hot:
-        st.write("**🏆 Números más frecuentes (Hot)**")
-        hot = freq.most_common(15)
-        for n, c in hot:
-            st.write(f"{n:2d} → {c} veces ({c/total*100:.1f}%)")
+    common_pairs = get_common_pairs(recent)
 
-    with col_cold:
-        st.write("**❄️ Números menos frecuentes**")
-        cold = freq.most_common()[-10:]
-        for n, c in cold:
-            st.write(f"{n:2d} → {c} veces")
+    # Gráficos
+    st.subheader("📊 Estadísticas clave")
+    col_g1, col_g2 = st.columns(2)
+    with col_g1:
+        freq_df = pd.DataFrame(freq.most_common(20), columns=["Número", "Veces"])
+        fig = px.bar(freq_df, x="Número", y="Veces", title="Top 20 números más frecuentes")
+        st.plotly_chart(fig, use_container_width=True)
 
-    # Generar combinaciones
-    if st.button("🎲 Generar combinaciones recomendadas", type="primary"):
-        st.subheader("📊 Tus sugerencias estadísticas")
-        hot_numbers = [n for n, _ in freq.most_common(35)]
+    with col_g2:
+        st.write("**🔥 Pares más frecuentes**")
+        for (a,b), count in common_pairs[:8]:
+            st.write(f"{a:2d} - {b:2d} → {count} veces")
+
+    # Generador Elite
+    def generate_elite_combo(freq, recent, strategy):
+        hot = [n for n, _ in freq.most_common(28)]
+        cold = [n for n, _ in freq.most_common()[-18:]]
+        numbers = list(range(1, 50))
         
-        for i in range(n_combos):
-            combo = sorted(random.sample(hot_numbers, 6))
-            reintegro = random.randint(0, 9)
-            st.success(f"**{i+1:2d}.** {combo}  +  **Reintegro: {reintegro}**")
+        for _ in range(200):  # Intentos para cumplir filtros
+            if strategy == "Mixed Smart":
+                combo = sorted(random.sample(hot[:22], 4) + random.sample(cold, 2))
+            else:  # Balanced Elite
+                combo = sorted(random.sample(numbers, 6))
+            
+            odds = sum(1 for x in combo if x % 2 == 1)
+            lows = sum(1 for x in combo if x <= 25)
+            s = sum(combo)
+            decades = len(set(x//10 for x in combo))
+            
+            # Filtros estrictos de calidad
+            if (odds in [3, 4] and 
+                lows in [3, 4] and 
+                125 <= s <= 185 and 
+                decades >= 4 and 
+                max(combo) - min(combo) >= 20 and
+                not any(abs(combo[i]-combo[i+1]) == 1 for i in range(5))):  # Sin consecutivos
+                return combo, random.randint(0, 9), s, odds
+        # Fallback
+        return sorted(random.sample(hot, 6)), random.randint(0, 9), sum(combo), sum(1 for x in combo if x % 2 == 1)
 
-    st.info("💡 Recuerda: Cada sorteo es aleatorio. Este análisis solo ayuda a elegir con criterio estadístico histórico.")
-
-    st.caption("Datos de lotoideas.com • Actualizados automáticamente")
+    if st.button("🎯 Generar MIS 2 MEJORES COMBINACIONES", type   
