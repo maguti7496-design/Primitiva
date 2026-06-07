@@ -1,0 +1,2 @@
+# Primitiva
+Analizador primitiva
